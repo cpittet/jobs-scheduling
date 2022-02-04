@@ -48,10 +48,13 @@ class Model:
         :param person: person to be assigned
         :return: -
         """
-        self.shifts_vars[shift.id] = self.model.NewOptionalIntervalVar(start=shift.start, size=shift.end - shift.start,
-                                                                       end=shift.end,
-                                                                       is_present=self.shifts_dict[(person, shift)],
-                                                                       name=f'shift {shift.id} ({shift.start}, {shift.end})')
+        # print(self.shifts_dict[(person, shift)])
+        self.shifts_vars[(person, shift)] = self.model.NewOptionalIntervalVar(start=shift.start,
+                                                                              size=shift.end - shift.start,
+                                                                              end=shift.end,
+                                                                              is_present=self.shifts_dict[
+                                                                                  (person, shift)],
+                                                                              name=f'shift {shift.id} ({shift.start}, {shift.end})')
 
     def create_variables(self, shift, person):
         """
@@ -89,6 +92,25 @@ class Model:
         if shift.is_major_only and (not person.is_major()) and (not is_forbidden):
             self.model.AddForbiddenAssignments([self.shifts_dict[(person, shift)]], [(True,)])
 
+    def create_no_overlap_constraints(self):
+        """
+        Create the non overlap constraints for the
+        assignments of persons to shifts.
+        :return: -
+        """
+        intervals_to_constrain = {}
+
+        for (person, shift), interval_var in self.shifts_vars.items():
+            if person in intervals_to_constrain.keys():
+                intervals_to_constrain[person].append(interval_var)
+            else:
+                intervals_to_constrain[person] = [interval_var]
+
+        for intervals_per_person in intervals_to_constrain.values():
+            # Must add no overlap constraints per person and not
+            # all intervals at once regardless of person !
+            self.model.AddNoOverlap(intervals_per_person)
+
     def create_general_constraints(self, shifts, persons):
         """
         Create general constraints on certain values
@@ -106,19 +128,14 @@ class Model:
             # Add the minimum number of shifts constraint for this person
             self.model.Add(sum(self.shifts_dict[(p, s)] for s in shifts) >= self.min_nb_shifts)
 
-    def create_no_overlap_constraints(self):
-        """
-        Create the non overlap constraints for the
-        assignments of persons to shifts.
-        :return: -
-        """
-        self.model.AddNoOverlap(self.shifts_vars.values())
+        # Add the no overlap constraints on the shifts by person
+        self.create_no_overlap_constraints()
 
     def create_objective(self, shifts, persons):
         """
         Create and set the constraints for the objective function.
         :param shifts: shifts to be assigned
-        :param: persons : persons to be assigned
+        :param persons : persons to be assigned
         :return: -
         """
         # Create the objective variable
@@ -193,6 +210,9 @@ class Model:
         # Add general constraints
         self.create_general_constraints(shifts, persons)
 
+        # Add the soft constraints as the objectives
+        # self.create_objective(shifts, persons)
+
     def solve(self):
         """
         Solve the problem specified by this model
@@ -200,6 +220,14 @@ class Model:
         """
         solver = cp_model.CpSolver()
         status = solver.Solve(self.model)
+
+        if status == cp_model.OPTIMAL:
+            status_str = 'Optimal'
+        elif status == cp_model.FEASIBLE:
+            status_str = 'Feasible'
+        elif status == cp_model.INFEASIBLE:
+            status_str = 'Infeasible'
+        print(f'Status of the solution : {status_str}')
 
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             print('Solution found')

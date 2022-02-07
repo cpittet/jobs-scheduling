@@ -1,0 +1,221 @@
+#:kivy 2.0.0
+
+<Root>:
+    min_nb_shift: root.min_nb_shift
+    min_nb_shift: root.min_nb_shift
+
+    BoxLayout:
+        padding: [25, 25]
+        spacing: 50
+
+        BoxLayout:
+            spacing: 50
+            orientation: 'vertical'
+
+            BoxLayout:
+                spacing: 15
+                orientation: 'vertical'
+
+                BoxLayout:
+                    canvas.before:
+                        Line:
+                            rectangle: self.x, self.y, self.width, self.height
+                    padding: [10, 10]
+                    orientation: 'vertical'
+
+                    Button:
+                        text: 'Sélectionner les personnes'
+                        on_release: root.show_load_persons()
+
+                    Label:
+                        text_size: self.size
+                        halign: 'left'
+                        valign: 'middle'
+                        text: root.persons_file
+
+                BoxLayout:
+                    canvas.before:
+                        Line:
+                            rectangle: self.x, self.y, self.width, self.height
+                    padding: [10, 10]
+                    orientation: 'vertical'
+
+                    Button:
+                        text: 'Sélectionner les shifts'
+                        on_release: root.show_load_shifts()
+
+                    Label:
+                        text_size: self.size
+                        halign: 'left'
+                        valign: 'middle'
+                        text: root.shifts_file
+
+                BoxLayout:
+                    canvas.before:
+                        Line:
+                            rectangle: self.x, self.y, self.width, self.height
+                    padding: [10, 10]
+                    orientation: 'vertical'
+
+                    Button:
+                        text: 'Sélectionner les disponibilités'
+                        on_release: root.show_load_availabilities()
+
+                    Label:
+                        text_size: self.size
+                        halign: 'left'
+                        valign: 'middle'
+                        text: root.availabilities_file
+
+                BoxLayout:
+                    canvas.before:
+                        Line:
+                            rectangle: self.x, self.y, self.width, self.height
+                    padding: [10, 10]
+                    orientation: 'vertical'
+
+                    Button:
+                        text: 'Sélectionner le fichier de destination'
+                        on_release: root.show_save()
+
+                    Label:
+                        text_size: self.size
+                        halign: 'left'
+                        valign: 'middle'
+                        text: root.save_file
+
+            BoxLayout:
+                canvas.before:
+                    Line:
+                        rectangle: self.x, self.y, self.width, self.height
+                padding: [10, 10]
+                orientation: 'vertical'
+                size_hint_y: None
+                height: 170
+                spacing: 15
+
+                BoxLayout:
+                    orientation: 'vertical'
+
+                    Label:
+                        text_size: self.size
+                        halign: 'left'
+                        valign: 'middle'
+                        text: 'Nbr. minimum de shift par personnes :'
+                    TextInput:
+                        size_hint_y: None
+                        height: 30
+                        valign: 'middle'
+                        text: root.min_nb_shift
+                        input_filter: 'int'
+
+                BoxLayout:
+                    orientation: 'vertical'
+
+                    Label:
+                        text_size: self.size
+                        halign: 'left'
+                        valign: 'middle'
+                        text: 'Nbr. maximum de shift par personnes :'
+                    TextInput:
+                        size_hint_y: None
+                        height: 30
+                        valign: 'middle'
+                        text: root.max_nb_shift
+                        input_filter: 'int'
+
+        BoxLayout:
+            canvas.before:
+                Line:
+                    rectangle: self.x, self.y, self.width, self.height
+            padding: [10, 10]
+            orientation: 'vertical'
+
+            Button:
+                size_hint_y: None
+                height: 30
+                text: 'Calculer'
+                on_release: root.compute_and_save()
+
+            BoxLayout:
+                size_hint_y: None
+                height: 30
+                Label:
+                    text: 'Temps de calcul [s] :'
+                    halign: 'left'
+                Label:
+                    halign: 'left'
+                    valign: 'middle'
+                    text: root.time_solver
+
+<LoadDialog>:
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: 'vertical'
+
+        FileChooserIconView:
+            id: filechooser
+            filters: root.file_filter
+
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+
+            Button:
+                text: 'Annuler'
+                on_release: root.cancel()
+
+            Button:
+                text: 'Sélectionner'
+                on_release: root.load(filechooser.path, filechooser.selection)
+
+<SaveDialog>:
+    text_input: text_input
+
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: 'vertical'
+
+        FileChooserIconView:
+            id: filechooser
+            on_selection: text_input.text = self.selection and self.selection[0] or ''
+
+        TextInput:
+            id: text_input
+            size_hint_y: None
+            height: 30
+            multilines: False
+
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+
+            Button:
+                text: 'Annuler'
+                on_release: root.cancel()
+
+            Button:
+                text: 'Sélectionner'
+                on_release: root.save(filechooser.path, text_input.text)
+
+<MessageDialog>:
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: 'vertical'
+
+        Label:
+            text_size: self.size
+            halign: 'center'
+            valign: 'middle'
+            text: root.text
+
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+
+            Button:
+                text: 'OK'
+                on_release: root.ok()

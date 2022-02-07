@@ -8,7 +8,12 @@ from utils.utils import shifts_overlap
 
 
 class Model:
-    def __init__(self, min_nb_shifts, max_nb_shifts, min_break=1, alpha=1, beta=1, gamma=1):
+    status_str_optimal = 'optimal'
+    status_str_feasible = 'feasible'
+    status_str_infeasible = 'infeasible'
+    status_str_invalid = 'invalid'
+
+    def __init__(self, min_nb_shifts, max_nb_shifts, alpha=1, beta=1, gamma=1):
         # Model use to solve the optimization
         self.model = cp_model.CpModel()
 
@@ -29,9 +34,6 @@ class Model:
 
         # Objective variable
         self.objective_var = None
-
-        # Minimum time for the break
-        self.min_break = min_break
 
     def create_assignment_person_shift_variable(self, shift, person):
         """
@@ -300,10 +302,42 @@ class Model:
     def solve(self):
         """
         Solve the problem specified by this model
+        :return: dict of the form: (shift: list of person assigned),
+            string status, wall time
+        """
+        solver = cp_model.CpSolver()
+        status = solver.Solve(self.model)
+        status_str = self.status_str_invalid
+
+        if status == cp_model.OPTIMAL:
+            status_str = self.status_str_optimal
+        elif status == cp_model.FEASIBLE:
+            status_str = self.status_str_feasible
+        elif status == cp_model.INFEASIBLE:
+            status_str = self.status_str_infeasible
+
+        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+            assignments = {}
+            for (p, s), var in self.shifts_dict.items():
+                if solver.Value(var):
+                    if s in assignments.keys():
+                        assignments[s] = assignments[s] + [p]
+                    else:
+                        assignments[s] = [p]
+
+            return assignments, status_str, solver.WallTime()
+
+        else:
+            return None, status_str, solver.WallTime()
+
+    def solve_test(self):
+        """
+        Solve the problem specified by this model
         :return: -
         """
         solver = cp_model.CpSolver()
         status = solver.Solve(self.model)
+        status_str = 'invalid'
 
         if status == cp_model.OPTIMAL:
             status_str = 'Optimal'
@@ -311,8 +345,6 @@ class Model:
             status_str = 'Feasible'
         elif status == cp_model.INFEASIBLE:
             status_str = 'Infeasible'
-        else:
-            print(solver.StatusName(status))
         print(f'Status of the solution : {status_str}')
 
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
@@ -329,8 +361,5 @@ class Model:
                 print(f'{s} : ')
                 for p in l:
                     print(f'\t{p}')
-
-            return assignments
-
         else:
             print('No solution found')

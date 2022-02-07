@@ -101,24 +101,27 @@ def load_shifts(file):
 def load_availabilities(file):
     """
     Load the availabilities file and return it as
-    a dict.
+    a dict. Return None if the file is None
     :param file: path of the file
     :return: dict of the form:
         person name: list of tuples (ranges) (start not available, end no available)
         where the person is NOT available
     """
-    df = pd.read_csv(file, usecols=['nom', 'debut', 'fin'])
-    df['debut'] = pd.to_datetime(df['debut'])
-    df['fin'] = pd.to_datetime(df['fin'])
+    if file is not None:
+        df = pd.read_csv(file, usecols=['nom', 'debut', 'fin'])
+        df['debut'] = pd.to_datetime(df['debut'])
+        df['fin'] = pd.to_datetime(df['fin'])
 
-    availabilities = {}
-    for _, row in df.iterrows():
-        if row['nom'] in availabilities.keys():
-            availabilities[row['nom']].append((row['debut'], row['fin']))
-        else:
-            availabilities[row['nom']] = [(row['debut'], row['fin'])]
+        availabilities = {}
+        for _, row in df.iterrows():
+            if row['nom'] in availabilities.keys():
+                availabilities[row['nom']].append((row['debut'], row['fin']))
+            else:
+                availabilities[row['nom']] = [(row['debut'], row['fin'])]
 
-    return availabilities
+        return availabilities
+
+    return None
 
 
 def generate_availability_matrix(persons, shifts, availabilities, ref_time):
@@ -134,18 +137,19 @@ def generate_availability_matrix(persons, shifts, availabilities, ref_time):
     """
     availability = np.ones((len(persons), len(shifts)), dtype=bool)
 
-    for person_name, x in availabilities.items():
-        for i, p in enumerate(persons):
-            if person_name == p.name:
-                for j, s in enumerate(shifts):
-                    for start, end in x:
-                        # If the range where the person is not available
-                        # and the range of the shift overlap, then
-                        # mark as not available
-                        start_ = compute_time_from_ref_time(start, ref_time)
-                        end_ = compute_time_from_ref_time(end, ref_time)
-                        if range_overlap(s.start, s.end, start_, end_):
-                            availability[i, j] = False
+    if availabilities is not None:
+        for person_name, x in availabilities.items():
+            for i, p in enumerate(persons):
+                if person_name == p.name:
+                    for j, s in enumerate(shifts):
+                        for start, end in x:
+                            # If the range where the person is not available
+                            # and the range of the shift overlap, then
+                            # mark as not available
+                            start_ = compute_time_from_ref_time(start, ref_time)
+                            end_ = compute_time_from_ref_time(end, ref_time)
+                            if range_overlap(s.start, s.end, start_, end_):
+                                availability[i, j] = False
 
     return availability
 

@@ -33,6 +33,33 @@ def shifts_overlap(s1, s2):
         return do_overlap, s2, s1
 
 
+def compute_ref_time(file):
+    """
+    Compute the reference time for the model
+    from the file containing the shifts. The reference time
+    is defined as the start time of the earliest
+    shift.
+    :param file: path of the file
+    :return: reference time as datetime
+    """
+    df = pd.read_csv(file, usecols=['debut'])
+    df['debut'] = pd.to_datetime(df['debut'])
+
+    return df['debut'].min()
+
+
+def compute_time_from_ref_time(time, ref_time):
+    """
+    Compute the time from the reference time in
+    minutes.
+    :param time: time in datetime
+    :param ref_time: reference time in datetime
+    :return: time spend from reference time
+        in minutes
+    """
+    return (time - ref_time).seconds // 60
+
+
 def load_persons(file):
     """
     Load the persons file and
@@ -53,7 +80,7 @@ def load_shifts(file):
     Load the shifts file and
     instantiate them.
     :param file: path of the file
-    :return: list of Shift
+    :return: list of Shift, reference time
     """
     df = pd.read_csv(file, usecols=['id', 'debut', 'fin', 'nombre', 'majeur'])
     df['debut'] = pd.to_datetime(df['debut'])
@@ -62,10 +89,13 @@ def load_shifts(file):
     # Convert major only column
     df['majeur'] = df['majeur'].apply(lambda x: True if x == 'oui' else False)
 
-    # Fix a reference time
-    ref_time = datetime.datetime.now()
+    # Fix a reference time as the start of the earliest shift
+    ref_time = compute_ref_time(file)
 
-    return [Shift(row['id'], (row['debut'] - ref_time).seconds, (row['fin'] - ref_time).seconds, row['nombre'], row['majeur']) for _, row in df.iterrows()]
+    return [Shift(row['id'],
+                  compute_time_from_ref_time(row['debut'], ref_time),
+                  compute_time_from_ref_time(row['fin'], ref_time),
+                  row['nombre'], row['majeur']) for _, row in df.iterrows()], ref_time
 
 
 def load_availabilities(file):
@@ -91,13 +121,14 @@ def load_availabilities(file):
     return availabilities
 
 
-def generate_availability_matrix(persons, shifts, availabilities):
+def generate_availability_matrix(persons, shifts, availabilities, ref_time):
     """
     Build the (nb persons, nb shifts) numpy array representing the
     availabilities of the persons for all the shifts.
     :param persons: list of persons
     :param shifts: list of shifts
     :param availabilities: dict of list of tuples (start not available, end no available)
+    :param ref_time: reference time in datetime
     :return: numpy array of shape (nb persons, nb shifts)
         containing True if the person is available at a given shift, False if not
     """
@@ -111,7 +142,9 @@ def generate_availability_matrix(persons, shifts, availabilities):
                         # If the range where the person is not available
                         # and the range of the shift overlap, then
                         # mark as not available
-                        if range_overlap(s.start, s.end, start, end):
+                        start_ = compute_time_from_ref_time(start, ref_time)
+                        end_ = compute_time_from_ref_time(end, ref_time)
+                        if range_overlap(s.start, s.end, start_, end_):
                             availability[i, j] = False
 
     return availability

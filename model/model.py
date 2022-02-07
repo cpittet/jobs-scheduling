@@ -4,6 +4,8 @@ import ortools.sat.python.cp_model
 from ortools.sat.python import cp_model
 from itertools import combinations
 
+from utils.utils import shifts_overlap
+
 
 class Model:
     def __init__(self, min_nb_shifts, max_nb_shifts, min_break=1, alpha=1, beta=1, gamma=1):
@@ -127,8 +129,10 @@ class Model:
 
         # Constraint for the minimum number of person by shift
         for p in persons:
-            # Add the minimum number of shifts constraint for this person
-            self.model.Add(sum(self.shifts_dict[(p, s)] for s in shifts) >= self.min_nb_shifts)
+            # Add the minimum and maximum number of shifts constraint for this person
+            nb_shifts = sum(self.shifts_dict[(p, s)] for s in shifts)
+            self.model.Add(nb_shifts >= self.min_nb_shifts)
+            self.model.Add(nb_shifts <= self.max_nb_shifts)
 
         # Add the no overlap constraints on the shifts by person
         self.create_no_overlap_constraints()
@@ -142,17 +146,23 @@ class Model:
         :return: difference between max and min number of shifts
         assigned to a single person
         """
-        min_var_objective = self.model.NewIntVar(0, len(shifts), 'min_nb_shifts')
+        # Compute the number of shifts assigned to each person
+        sums_vars = []
+        for p in persons:
+            tmp = self.model.NewIntVar(0, len(shifts), f'person_{p}_nb_shifts')
+            self.model.Add(tmp == sum(self.shifts_dict[(p, s)] for s in shifts))
+
+            sums_vars.append(tmp)
 
         # Set the variable to be the minimum number of shifts assigned to
         # a single person
-        self.model.AddMinEquality(min_var_objective, [sum(self.shifts_dict[(p, s)] for s in shifts) for p in persons])
-
-        max_var_objective = self.model.NewIntVar(0, len(shifts), 'max_nb_shifts')
+        min_var_objective = self.model.NewIntVar(0, len(shifts), 'min_nb_shifts_objective')
+        self.model.AddMinEquality(min_var_objective, sums_vars)
 
         # Set the variable to be the minimum number of shifts assigned to
         # a single person
-        self.model.AddMaxEquality(max_var_objective, [sum(self.shifts_dict[(p, s)] for s in shifts) for p in persons])
+        max_var_objective = self.model.NewIntVar(0, len(shifts), 'max_nb_shifts_objective')
+        self.model.AddMaxEquality(max_var_objective, sums_vars)
 
         # Compute the difference between the 2 extremes
         return max_var_objective - min_var_objective
@@ -164,19 +174,87 @@ class Model:
         each shift.
         :return: objective for this soft constraint
         """
+        """
+        # Init all the shifts count to 1, otherwise
+        # the problem is not feasible if a shift has
+        # no person that can be in charge
+        has_manager = {s.id: [self.model.NewConstant(1)] for s in shifts}
+
         # Compute the number of person that can
         # be in charge for each shift
-        has_manager = {}
         for (p, s), var in self.shifts_dict.items():
             if p.can_charge:
-                if s.id in has_manager.keys():
-                    has_manager[s.id] += var
-                else:
-                    has_manager[s.id] = var
+                # Use negation to use product afterwards,
+                # has to define new variable for each negation
+                # for multiplication below to work
+                tmp = self.model.NewBoolVar(f'person_{p}_not_can_charge')
+                self.model.Add(tmp == var.Not())
+                has_manager[s.id].append(tmp)
 
-        max_persons_needed = max(s.nb_persons for s in shifts)
-        var_objective = self.model.NewIntVar(0, max_persons_needed, 'has_manager_objective')
-        self.model.AddMinEquality(var_objective, list(has_manager.values()))
+        products = []
+        for s_id, bools in has_manager.items():
+            tmp = self.model.NewBoolVar(f'shift_id_{s_id}_has_manager_objective')
+
+            # Product will be 1 if there is no person assigned to this shift
+            # that can be in charge and 0 if there is at least one
+            self.model.AddMultiplicationEquality(tmp, bools)
+
+            products.append(tmp)
+
+        # Want to minimize the number of shifts that has no person that
+        # can be in charge
+        objective_var = self.model.NewIntVar(0, len(shifts), 'has_manager_objective')
+        self.model.Add(objective_var == sum(products))
+        return objective_var
+        """
+        #""" Above solution better represens the objective but
+        # currently yields an invalid model
+        # Compute the number of person that can be in charge for
+        # each shift
+        has_manager = {s.id: self.model.NewConstant(0) for s in shifts}
+        for (p, s), var in self.shifts_dict.items():
+            if p.can_charge:
+                has_manager[s.id] += var
+
+        # Create new variables for each sum
+        max_number_persons = max(s.nb_persons for s in shifts)
+        sums = []
+        for s_id, bools in has_manager.items():
+            tmp = self.model.NewIntVar(0, max_number_persons, f'shift_{s_id}')
+            self.model.Add(tmp == bools)
+
+            sums.append(tmp)
+
+        # Compute the minimum number of person in charge in a shift
+        objective_var = self.model.NewIntVar(0, max_number_persons, 'has_manager_objective')
+        self.model.AddMinEquality(objective_var, sums)
+
+        return -objective_var
+        #"""
+
+    def compute_break_objective(self, shifts, persons):
+        """
+        Compute the objective that encourage having
+        a break between 2 assignments for each person.
+        :param shifts: shifts to be assigned
+        :param persons : persons to be assigned
+        :return: objective for this soft constraint
+        """
+        var_objective = 0
+        for p in persons:
+            # For each person, compute the total time
+            # between her/his assigned tasks
+            for s1, s2 in combinations(shifts, 2):
+                # If the 2 shifts overlap, skip them
+                do_overlap, s1_, s2_ = shifts_overlap(s1, s2)
+                if not do_overlap:
+                    # Add the break between the 2 shifts
+                    # if this person was assigned to these 2 shifts
+                    tmp_var = self.model.NewIntVar(0, 1, f'person_{p}_shifts_pair_{s1_}_{s2_}_break_objective')
+                    self.model.AddMultiplicationEquality(tmp_var, [self.shifts_dict[(p, s1_)], self.shifts_dict[(p, s2_)]])
+                    var_objective += tmp_var * (s2_.start - s1_.end)
+
+        # In negative as want to minimize the final objective
         return - var_objective
 
     def create_objective(self, shifts, persons):
@@ -186,32 +264,10 @@ class Model:
         :param persons : persons to be assigned
         :return: -
         """
-        # Compute the least amount of break this person p has
-        # in its assignment
-        def compute_break_objective(shifts, shifts_dict, p):
-            # Collect shifts assigned to this person p
-            shifts_p = [(shifts_dict[(p, s)].start, shifts_dict[(p, s)].end) for s in shifts if shifts_dict[(p, s)]]
-
-            # If this person has less than 2 shift, return 0
-            if len(shifts_p) < 2:
-                return 0
-
-            min_break = math.inf
-            for s1, s2 in combinations(shifts_p, 2):
-                cur_break_1 = s2[0] - s1[1]
-                cur_break_2 = s1[0] - s2[1]
-                if 0 <= cur_break_1 < min_break:
-                    min_break = cur_break_1
-                if 0 <= cur_break_2 < min_break:
-                    min_break = cur_break_2
-
-            # Return negative min break as we minimize the objective function
-            return -min_break if min_break < self.min_break else 0
-
         self.model.Minimize(
-            #self.alpha * self.compute_nb_shifts_per_person_objective(shifts, persons) +
-            #self.beta * self.compute_has_manager_objective()
-            self.gamma * sum(compute_break_objective(shifts, self.shifts_dict, p) for p in persons)
+            self.alpha * self.compute_nb_shifts_per_person_objective(shifts, persons) +
+            self.beta * self.compute_has_manager_objective(shifts) +
+            self.gamma * self.compute_break_objective(shifts, persons)
         )
 
     def build_model(self, persons, shifts, availability):
@@ -223,7 +279,6 @@ class Model:
         :param shifts: list of shifts
         :param availability: numpy array of shape (nb persons, nb shifts)
         containing True if the person is available at a given shift, False if not
-
         :return: -
         """
         # Add all variables and constraints for pairs of person-shift
@@ -232,15 +287,15 @@ class Model:
                 # Create all the variables
                 self.create_variables(s, p)
 
-                # Create all the constraints
+                # Create all the hard constraints for each pair
+                # of shift and person
                 self.create_constraints(s, p, availability[i, j])
 
-        # Add general constraints
+        # Add general hard constraints
         self.create_general_constraints(shifts, persons)
 
         # Add the soft constraints as the objective
-        # TODO : fix soft constraints
-        #self.create_objective(shifts, persons)
+        self.create_objective(shifts, persons)
 
     def solve(self):
         """
@@ -256,6 +311,8 @@ class Model:
             status_str = 'Feasible'
         elif status == cp_model.INFEASIBLE:
             status_str = 'Infeasible'
+        else:
+            print(solver.StatusName(status))
         print(f'Status of the solution : {status_str}')
 
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
@@ -272,6 +329,8 @@ class Model:
                 print(f'{s} : ')
                 for p in l:
                     print(f'\t{p}')
+
+            return assignments
 
         else:
             print('No solution found')

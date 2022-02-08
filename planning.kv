@@ -1,8 +1,8 @@
 #:kivy 2.0.0
 
 <Root>:
-    min_nb_shift: root.min_nb_shift
-    min_nb_shift: root.min_nb_shift
+    min_nb_shift: min_nb_shift
+    max_nb_shift: max_nb_shift
 
     BoxLayout:
         padding: [25, 25]
@@ -103,10 +103,10 @@
                         valign: 'middle'
                         text: 'Nbr. minimum de shift par personnes :'
                     TextInput:
+                        id: min_nb_shift
                         size_hint_y: None
                         height: 30
                         valign: 'middle'
-                        text: root.min_nb_shift
                         input_filter: 'int'
 
                 BoxLayout:
@@ -118,10 +118,10 @@
                         valign: 'middle'
                         text: 'Nbr. maximum de shift par personnes :'
                     TextInput:
+                        id: max_nb_shift
                         size_hint_y: None
                         height: 30
                         valign: 'middle'
-                        text: root.max_nb_shift
                         input_filter: 'int'
 
         BoxLayout:
@@ -157,6 +157,7 @@
         FileChooserIconView:
             id: filechooser
             filters: root.file_filter
+            path: '.'
 
         BoxLayout:
             size_hint_y: None
@@ -181,6 +182,7 @@
         FileChooserIconView:
             id: filechooser
             on_selection: text_input.text = self.selection and self.selection[0] or ''
+            path: '.'
 
         TextInput:
             id: text_input

@@ -32,8 +32,8 @@ class Root(FloatLayout):
     load_person_file = ObjectProperty(None)
     load_shift_file = ObjectProperty(None)
     save_schedule_file = ObjectProperty(None)
-    min_nb_shift = StringProperty('1')
-    max_nb_shift = StringProperty('4')
+    min_nb_shift = ObjectProperty(None)
+    max_nb_shift = ObjectProperty(None)
     persons_file = StringProperty('')
     shifts_file = StringProperty('')
     availabilities_file = StringProperty('')
@@ -159,7 +159,7 @@ class Root(FloatLayout):
 
     def select_save(self, path, filename):
         if not filename.endswith('.csv'):
-            filename =  f'{filename}.csv'
+            filename = f'{filename}.csv'
 
         self.save_file = os.path.join(path, filename)
 
@@ -175,7 +175,7 @@ class Root(FloatLayout):
         self.popup.open()
 
     def show_nb_shifts_error(self):
-        message = "Le nombre minimum de shifts par personne doit être plus petit que le maximum !"
+        message = "Le nombre minimum de shifts par personne doit être plus petit que le maximum et être positif !"
         content = MessageDialog(text=message, ok=self.close_popup)
         self.popup = Popup(title='Erreur : nombre de shifts',
                            content=content,
@@ -221,7 +221,7 @@ class Root(FloatLayout):
             self.show_file_not_selected('disponibilités')
         elif self.save_file == '':
             self.show_file_not_selected('résultats')
-        elif int(self.min_nb_shift) > int(self.max_nb_shift) or int(self.min_nb_shift) < 0 or int(self.max_nb_shift) < 0:
+        elif int(self.min_nb_shift.text) > int(self.max_nb_shift.text) or int(self.min_nb_shift.text) < 0 or int(self.max_nb_shift.text) < 0:
             self.show_nb_shifts_error()
         else:
             # Compute the availability matrix
@@ -231,7 +231,9 @@ class Root(FloatLayout):
                                                                     self.ref_time)
 
             # Instantiate the model
-            model = Model(min_nb_shifts=int(self.min_nb_shift), max_nb_shifts=int(self.max_nb_shift))
+            print(int(self.min_nb_shift.text))
+            print(int(self.max_nb_shift.text))
+            model = Model(min_nb_shifts=int(self.min_nb_shift.text), max_nb_shifts=int(self.max_nb_shift.text))
             model.build_model(self.persons, self.shifts, self.availability_matrix)
 
             # Kick the computations

@@ -4,7 +4,9 @@ from kivy.app import App
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, ListProperty
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.popup import Popup
+from kivy.core.window import Window
 
+import utils.utils
 from model.model import Model
 from utils.utils import load_persons, load_availabilities, generate_availability_matrix, save_schedule, load_shifts
 
@@ -89,17 +91,71 @@ class Root(FloatLayout):
 
         self.close_popup()
 
+        error_msg = None
+        if self.persons == utils.utils.INVALID_COLUMNS:
+            error_msg = f'Le fichier {self.persons_file} ne contient pas les bonnes colonnes ' \
+                        f'("nom", "age", "responsable")! Veuillez contrôler son contenu.'
+        elif self.persons == utils.utils.NOT_UNIQUE_DATA:
+            error_msg = f'Le fichier {self.persons_file} contient plusieurs fois la même personne !' \
+                        f' Contrôlez son contenu.'
+        elif self.persons == utils.utils.INVALID_DATA:
+            error_msg = f'La colonne "responsable" du fichier {self.persons_file} contient des données différentes de' \
+                        f'"oui" ou "non" ! Veuillez contrôler son contenu.'
+
+        if error_msg is not None:
+            self.persons = None
+            self.persons_file = ''
+            content = MessageDialog(text=error_msg, ok=self.close_popup)
+            self.popup = Popup(title='Données invalides',
+                               content=content,
+                               size_hint=(0.8, 0.8))
+            self.popup.open()
+
     def load_shifts(self, path, filename):
         self.shifts_file = os.path.join(path, filename[0])
         self.shifts, self.ref_time = load_shifts(self.shifts_file)
 
         self.close_popup()
 
+        error_msg = None
+        if self.shifts == utils.utils.INVALID_COLUMNS:
+            error_msg = f'Le fichier {self.shifts_file} ne contient pas les bonnes colonnes ' \
+                        f'("id", "debut", "fin", "nombre", "majeur") ! Veuillez contrôler son contenu.'
+        elif self.shifts == utils.utils.NOT_UNIQUE_DATA:
+            error_msg = f'Le fichier {self.shifts_file} contient plusieurs fois le même shift id' \
+                        f' ! Contrôlez son contenu.'
+        elif self.shifts == utils.utils.INVALID_DATA:
+            error_msg = f'La colonne "majeur" du fichier {self.shifts_file} contient des données différentes de' \
+                        f'"oui" ou "non" ! Veuillez contrôler son contenu.'
+
+        if error_msg is not None:
+            self.shifts = None
+            self.shifts_file = ''
+            content = MessageDialog(text=error_msg, ok=self.close_popup)
+            self.popup = Popup(title='Données invalides',
+                               content=content,
+                               size_hint=(0.8, 0.8))
+            self.popup.open()
+
     def load_availabilities(self, path, filename):
         self.availabilities_file = os.path.join(path, filename[0])
         self.availabilities = load_availabilities(self.availabilities_file)
 
         self.close_popup()
+
+        error_msg = None
+        if self.availabilities == utils.utils.INVALID_COLUMNS:
+            error_msg = f'Le fichier {self.availabilities_file} ne contient pas les bonnes colonnes ' \
+                        f'("nom", "debut", "fin") ! Veuillez contrôler son contenu.'
+
+        if error_msg is not None:
+            self.availabilities = None
+            self.availabilities_file = ''
+            content = MessageDialog(text=error_msg, ok=self.close_popup)
+            self.popup = Popup(title='Données invalides',
+                               content=content,
+                               size_hint=(0.8, 0.8))
+            self.popup.open()
 
     def select_save(self, path, filename):
         if not filename.endswith('.csv'):
@@ -114,7 +170,7 @@ class Root(FloatLayout):
         content = MessageDialog(text=message, ok=self.close_popup)
         self.popup = Popup(title='Fichier manquant',
                            content=content,
-                           size_hint=(0.8, 0.8))
+                           size_hint=(0.6, 0.6))
 
         self.popup.open()
 
@@ -123,7 +179,7 @@ class Root(FloatLayout):
         content = MessageDialog(text=message, ok=self.close_popup)
         self.popup = Popup(title='Erreur : nombre de shifts',
                            content=content,
-                           size_hint=(0.8, 0.8))
+                           size_hint=(0.6, 0.6))
 
         self.popup.open()
 
@@ -132,7 +188,7 @@ class Root(FloatLayout):
         content = MessageDialog(text=message, ok=self.close_popup)
         self.popup = Popup(title='Erreur : modèle invalide',
                            content=content,
-                           size_hint=(0.8, 0.8))
+                           size_hint=(0.6, 0.6))
 
         self.popup.open()
 
@@ -143,7 +199,7 @@ class Root(FloatLayout):
         content = MessageDialog(text=message, ok=self.close_popup)
         self.popup = Popup(title='Pas de solution',
                            content=content,
-                           size_hint=(0.8, 0.8))
+                           size_hint=(0.6, 0.6))
 
         self.popup.open()
 
@@ -152,7 +208,7 @@ class Root(FloatLayout):
         content = MessageDialog(text=message, ok=self.close_popup)
         self.popup = Popup(title='Solution trouvée',
                            content=content,
-                           size_hint=(0.8, 0.8))
+                           size_hint=(0.6, 0.6))
 
         self.popup.open()
 
@@ -197,6 +253,8 @@ class Root(FloatLayout):
 
 class PlanningApp(App):
     def build(self):
+        Window.size = (1000, 750)
+        Window.minimum_width, Window.minimum_height = Window.size
         return Root()
 
 

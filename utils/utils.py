@@ -1,9 +1,15 @@
-import datetime
+import csv
 
 import numpy as np
 import pandas as pd
+
 from model.person import Person
 from model.shift import Shift
+
+NOT_UNIQUE_DATA = 0
+INVALID_COLUMNS = 1
+INVALID_DATA = 2
+
 
 def range_overlap(start1, end1, start2, end2):
     """
@@ -60,6 +66,22 @@ def compute_time_from_ref_time(time, ref_time):
     return (time - ref_time).seconds // 60
 
 
+def check_columns_exists(file, cols):
+    """
+    Check whether all the given columns exist
+    in the given csv file
+    :param file: path of the file
+    :param cols: columns that must exist
+    :return: True if all the columns exist,
+        False otherwise
+    """
+    with open(file, 'r') as f:
+        csv_reader = csv.reader(f, delimiter=',')
+        cols_file = set(list(csv_reader)[0])
+
+    return cols_file.issubset(set(cols))
+
+
 def load_persons(file):
     """
     Load the persons file and
@@ -67,7 +89,19 @@ def load_persons(file):
     :param file: path of the file
     :return: list of Person
     """
+    # Check if all the columns exist
+    if not check_columns_exists(file, ['nom', 'age', 'responsable']):
+        return INVALID_COLUMNS
+
     df = pd.read_csv(file, usecols=['nom', 'age', 'responsable'])
+
+    # Check the person names are unique
+    if df['nom'].duplicated().sum() > 0:
+        return NOT_UNIQUE_DATA
+
+    # Check that the responsable columns only contains 'oui' or 'non'
+    if not set(df['responsable'].unique()).issubset({'oui', 'non'}):
+        return INVALID_DATA
 
     # Convert responsable columns
     df['responsable'] = df['responsable'].apply(lambda x: True if x == 'oui' else False)
@@ -82,9 +116,21 @@ def load_shifts(file):
     :param file: path of the file
     :return: list of Shift, reference time
     """
+    # Check if all the columns exist
+    if not check_columns_exists(file, ['id', 'debut', 'fin', 'nombre', 'majeur']):
+        return INVALID_COLUMNS, None
+
     df = pd.read_csv(file, usecols=['id', 'debut', 'fin', 'nombre', 'majeur'])
     df['debut'] = pd.to_datetime(df['debut'])
     df['fin'] = pd.to_datetime(df['fin'])
+
+    # Check the person names are unique
+    if df['id'].duplicated().sum() > 0:
+        return NOT_UNIQUE_DATA, None
+
+    # Check that the responsable columns only contains 'oui' or 'non'
+    if not set(df['majeur'].unique()).issubset({'oui', 'non'}):
+        return INVALID_DATA, None
 
     # Convert major only column
     df['majeur'] = df['majeur'].apply(lambda x: True if x == 'oui' else False)
@@ -108,6 +154,10 @@ def load_availabilities(file):
         where the person is NOT available
     """
     if file is not None:
+        # Check if all the columns exist
+        if not check_columns_exists(file, ['nom', 'debut', 'fin']):
+            return INVALID_COLUMNS
+
         df = pd.read_csv(file, usecols=['nom', 'debut', 'fin'])
         df['debut'] = pd.to_datetime(df['debut'])
         df['fin'] = pd.to_datetime(df['fin'])

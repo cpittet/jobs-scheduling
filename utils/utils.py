@@ -79,7 +79,7 @@ def check_columns_exists(file, cols):
         csv_reader = csv.reader(f, delimiter=',')
         cols_file = set(list(csv_reader)[0])
 
-    return cols_file.issubset(set(cols))
+    return set(cols).issubset(cols_file)
 
 
 def load_persons(file):

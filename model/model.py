@@ -1,8 +1,6 @@
-import math
-
-import ortools.sat.python.cp_model
-from ortools.sat.python import cp_model
 from itertools import combinations
+
+from ortools.sat.python import cp_model
 
 from utils.utils import shifts_overlap
 

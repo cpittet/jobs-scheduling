@@ -8,7 +8,8 @@ from model.shift import Shift
 
 NOT_UNIQUE_DATA = 0
 INVALID_COLUMNS = 1
-INVALID_DATA = 2
+INVALID_MAJOR_DATA = 2
+INVALID_DATE_DATA = 3
 
 
 def range_overlap(start1, end1, start2, end2):
@@ -22,6 +23,7 @@ def range_overlap(start1, end1, start2, end2):
         False otherwise
     """
     return start1 <= start2 < end1 or start2 <= start1 < end2
+
 
 def shifts_overlap(s1, s2):
     """
@@ -48,7 +50,7 @@ def compute_ref_time(file):
     :param file: path of the file
     :return: reference time as datetime
     """
-    df = pd.read_csv(file, usecols=['debut'])
+    df = pd.read_csv(file, usecols=['debut'], sep=None, engine='python', encoding='utf-8-sig')
     df['debut'] = pd.to_datetime(df['debut'])
 
     return df['debut'].min()
@@ -75,8 +77,8 @@ def check_columns_exists(file, cols):
     :return: True if all the columns exist,
         False otherwise
     """
-    with open(file, 'r') as f:
-        csv_reader = csv.reader(f, delimiter=',')
+    with open(file, 'r', encoding='utf-8-sig') as f:
+        csv_reader = csv.reader(f, delimiter=';')
         cols_file = set(list(csv_reader)[0])
 
     return set(cols).issubset(cols_file)
@@ -93,7 +95,7 @@ def load_persons(file):
     if not check_columns_exists(file, ['nom', 'age', 'responsable']):
         return INVALID_COLUMNS
 
-    df = pd.read_csv(file, usecols=['nom', 'age', 'responsable'])
+    df = pd.read_csv(file, usecols=['nom', 'age', 'responsable'], sep=None, engine='python', encoding='utf-8-sig')
 
     # Check the person names are unique
     if df['nom'].duplicated().sum() > 0:
@@ -101,10 +103,10 @@ def load_persons(file):
 
     # Check that the responsable columns only contains 'oui' or 'non'
     if not set(df['responsable'].unique()).issubset({'oui', 'non'}):
-        return INVALID_DATA
+        return INVALID_MAJOR_DATA
 
     # Convert responsable columns
-    df['responsable'] = df['responsable'].apply(lambda x: True if x == 'oui' else False)
+    df['responsable'] = df['responsable'].apply(lambda x: x == 'oui')
 
     return [Person(row['nom'], row['age'], row['responsable']) for _, row in df.iterrows()]
 
@@ -120,7 +122,7 @@ def load_shifts(file):
     if not check_columns_exists(file, ['id', 'debut', 'fin', 'nombre', 'majeur']):
         return INVALID_COLUMNS, None
 
-    df = pd.read_csv(file, usecols=['id', 'debut', 'fin', 'nombre', 'majeur'])
+    df = pd.read_csv(file, usecols=['id', 'debut', 'fin', 'nombre', 'majeur'], sep=None, engine='python', encoding='utf-8-sig')
     df['debut'] = pd.to_datetime(df['debut'])
     df['fin'] = pd.to_datetime(df['fin'])
 
@@ -130,13 +132,18 @@ def load_shifts(file):
 
     # Check that the responsable columns only contains 'oui' or 'non'
     if not set(df['majeur'].unique()).issubset({'oui', 'non'}):
-        return INVALID_DATA, None
+        return INVALID_MAJOR_DATA, None
+
+    # Check that start of shift is earlier than end
+    if df.apply(lambda row: row['debut'] > row['fin'], axis=1).sum() > 0:
+        return INVALID_DATE_DATA, None
 
     # Convert major only column
-    df['majeur'] = df['majeur'].apply(lambda x: True if x == 'oui' else False)
+    df['majeur'] = df['majeur'].apply(lambda x: x == 'oui')
 
     # Fix a reference time as the start of the earliest shift
     ref_time = compute_ref_time(file)
+    print(df)
 
     return [Shift(row['id'],
                   compute_time_from_ref_time(row['debut'], ref_time),
@@ -158,9 +165,13 @@ def load_availabilities(file):
         if not check_columns_exists(file, ['nom', 'debut', 'fin']):
             return INVALID_COLUMNS
 
-        df = pd.read_csv(file, usecols=['nom', 'debut', 'fin'])
+        df = pd.read_csv(file, usecols=['nom', 'debut', 'fin'], sep=None, engine='python', encoding='utf-8-sig')
         df['debut'] = pd.to_datetime(df['debut'])
         df['fin'] = pd.to_datetime(df['fin'])
+
+        # Check that start of shift is earlier than end
+        if df.apply(lambda row: row['debut'] > row['fin'], axis=1).sum() > 0:
+            return INVALID_DATE_DATA
 
         availabilities = {}
         for _, row in df.iterrows():
@@ -215,7 +226,7 @@ def save_schedule(file, assignments):
     data = {}
 
     for shift, persons in assignments.items():
-        data[shift.id] = ', '.join(persons)
+        data[shift.id] = ' / '.join([p.name for p in persons])
 
     df = pd.DataFrame.from_dict(data, orient='index', columns=['personnes'])
-    df.to_csv(file)
+    df.to_csv(file, sep=';', index_label='shift')

@@ -98,7 +98,7 @@ class Root(FloatLayout):
         elif self.persons == utils.utils.NOT_UNIQUE_DATA:
             error_msg = f'Le fichier {self.persons_file} contient plusieurs fois la même personne !' \
                         f' Contrôlez son contenu.'
-        elif self.persons == utils.utils.INVALID_DATA:
+        elif self.persons == utils.utils.INVALID_MAJOR_DATA:
             error_msg = f'La colonne "responsable" du fichier {self.persons_file} contient des données différentes de' \
                         f'"oui" ou "non" ! Veuillez contrôler son contenu.'
 
@@ -114,6 +114,9 @@ class Root(FloatLayout):
     def load_shifts(self, path, filename):
         self.shifts_file = os.path.join(path, filename[0])
         self.shifts, self.ref_time = load_shifts(self.shifts_file)
+        print(s.is_major_only for s in self.shifts)
+        print([s.nb_persons for s in self.shifts])
+        print([[s.start, s.end] for s in self.shifts])
 
         self.close_popup()
 
@@ -124,9 +127,12 @@ class Root(FloatLayout):
         elif self.shifts == utils.utils.NOT_UNIQUE_DATA:
             error_msg = f'Le fichier {self.shifts_file} contient plusieurs fois le même shift id' \
                         f' ! Contrôlez son contenu.'
-        elif self.shifts == utils.utils.INVALID_DATA:
+        elif self.shifts == utils.utils.INVALID_MAJOR_DATA:
             error_msg = f'La colonne "majeur" du fichier {self.shifts_file} contient des données différentes de' \
                         f'"oui" ou "non" ! Veuillez contrôler son contenu.'
+        elif self.shifts == utils.utils.INVALID_DATE_DATA:
+            error_msg = f"Le début d'un shift doit être avant sa fin ! (Contrôler en particulier les shifts " \
+                        f"commençant/finissant à minuit)"
 
         if error_msg is not None:
             self.shifts = None
@@ -147,6 +153,9 @@ class Root(FloatLayout):
         if self.availabilities == utils.utils.INVALID_COLUMNS:
             error_msg = f'Le fichier {self.availabilities_file} ne contient pas les bonnes colonnes ' \
                         f'("nom", "debut", "fin") ! Veuillez contrôler son contenu.'
+        elif self.availabilities == utils.utils.INVALID_DATE_DATA:
+            error_msg = f"Le début d'une période doit être avant sa fin ! (Contrôler en particulier les périodes " \
+                        f"commençant/finissant à minuit)"
 
         if error_msg is not None:
             self.availabilities = None
@@ -231,8 +240,6 @@ class Root(FloatLayout):
                                                                     self.ref_time)
 
             # Instantiate the model
-            print(int(self.min_nb_shift.text))
-            print(int(self.max_nb_shift.text))
             model = Model(min_nb_shifts=int(self.min_nb_shift.text), max_nb_shifts=int(self.max_nb_shift.text))
             model.build_model(self.persons, self.shifts, self.availability_matrix)
 
@@ -257,6 +264,7 @@ class PlanningApp(App):
     def build(self):
         Window.size = (1000, 750)
         Window.minimum_width, Window.minimum_height = Window.size
+        self.icon = 'icon.jpeg'
         return Root()
 
 

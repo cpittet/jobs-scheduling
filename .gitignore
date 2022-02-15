@@ -132,3 +132,4 @@ test.py
 
 .idea*
 data/
+solver.ipynb

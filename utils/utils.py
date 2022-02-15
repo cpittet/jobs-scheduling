@@ -65,7 +65,8 @@ def compute_time_from_ref_time(time, ref_time):
     :return: time spend from reference time
         in minutes
     """
-    return (time - ref_time).seconds // 60
+    delta = time - ref_time
+    return delta.seconds // 60 + delta.days * 1440
 
 
 def check_columns_exists(file, cols):
@@ -143,7 +144,6 @@ def load_shifts(file):
 
     # Fix a reference time as the start of the earliest shift
     ref_time = compute_ref_time(file)
-    print(df)
 
     return [Shift(row['id'],
                   compute_time_from_ref_time(row['debut'], ref_time),

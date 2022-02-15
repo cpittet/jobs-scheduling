@@ -1,10 +1,10 @@
 import os
 
 from kivy.app import App
-from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, ListProperty
+from kivy.core.window import Window
+from kivy.properties import ObjectProperty, StringProperty, ListProperty
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.popup import Popup
-from kivy.core.window import Window
 
 import utils.utils
 from model.model import Model
@@ -114,9 +114,6 @@ class Root(FloatLayout):
     def load_shifts(self, path, filename):
         self.shifts_file = os.path.join(path, filename[0])
         self.shifts, self.ref_time = load_shifts(self.shifts_file)
-        print(s.is_major_only for s in self.shifts)
-        print([s.nb_persons for s in self.shifts])
-        print([[s.start, s.end] for s in self.shifts])
 
         self.close_popup()
 

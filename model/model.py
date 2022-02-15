@@ -1,8 +1,11 @@
+import math
+import time
 from itertools import combinations
 
 from ortools.sat.python import cp_model
+from ortools.sat.python.cp_model import CpSolverSolutionCallback
 
-from utils.utils import shifts_overlap
+from utils.utils import shifts_overlap, save_schedule
 
 
 class Model:
@@ -251,8 +254,8 @@ class Model:
                     # Add the break between the 2 shifts
                     # if this person was assigned to these 2 shifts
                     tmp_var = self.model.NewIntVar(0, 1, f'person_{p}_shifts_pair_{s1_}_{s2_}_break_objective')
-                    self.model.AddMultiplicationEquality(tmp_var, [self.shifts_dict.get((p, s1_), 1),
-                                                                   self.shifts_dict.get((p, s2_), 1)])
+                    self.model.AddMultiplicationEquality(tmp_var, [self.shifts_dict.get((p, s1_), 0),
+                                                                   self.shifts_dict.get((p, s2_), 0)])
                     var_objective += tmp_var * (s2_.start - s1_.end)
 
         # In negative as want to minimize the final objective
@@ -300,67 +303,83 @@ class Model:
         # Add the soft constraints as the objective
         self.create_objective(shifts, persons)
 
-    def solve(self):
+    def solve(self, callback, max_solver_time):
         """
         Solve the problem specified by this model
+        :param callback: callback called each time a solution is found
+        :param max_solver_time: maximum number of minutes the solver will run in minutes
         :return: dict of the form: (shift: list of person assigned),
             string status, wall time
         """
         solver = cp_model.CpSolver()
-        status = solver.Solve(self.model)
-        status_str = self.status_str_invalid
+        solver.parameters.max_time_in_seconds = max_solver_time * 60
 
-        if status == cp_model.OPTIMAL:
-            status_str = self.status_str_optimal
-        elif status == cp_model.FEASIBLE:
-            status_str = self.status_str_feasible
-        elif status == cp_model.INFEASIBLE:
-            status_str = self.status_str_infeasible
+        return solver.SolveWithSolutionCallback(self.model, callback)
 
-        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            assignments = {}
-            for (p, s), var in self.shifts_dict.items():
-                if solver.Value(var):
-                    if s in assignments.keys():
-                        assignments[s] = assignments[s] + [p]
-                    else:
-                        assignments[s] = [p]
 
-            return assignments, status_str, solver.WallTime()
+def create_and_solve(min_nb_shift, max_nb_shift, persons, shifts, availability_matrix, callback, max_solver_time):
+    """
+    Instantiate, build the model and launch the computations to solve it.
+    :param min_nb_shift: min nb of shifts per person
+    :param max_nb_shift: max nb of shifts per person
+    :param persons: list of persons
+    :param shifts: list of shifts
+    :param availability_matrix: availabilities for each person and shift
+    :param callback: callback to be called each time a solution is found
+    :param max_solver_time: maximum number of minutes the solver will run in minutes
+    :return: -
+    """
+    # Instantiate the model
+    model = Model(min_nb_shifts=min_nb_shift, max_nb_shifts=max_nb_shift)
+    model.build_model(persons, shifts, availability_matrix)
 
-        else:
-            return None, status_str, solver.WallTime()
+    callback.model = model
 
-    def solve_test(self):
+    # Kick the computations
+    return model.solve(callback, max_solver_time)
+
+
+class SolutionSaverCallback(CpSolverSolutionCallback):
+    """
+    Save the best solution found so far in terms of
+    the objective value.
+    """
+
+    def __init__(self, dispatcher):
+        CpSolverSolutionCallback.__init__(self)
+        self.__solution_count = 0
+        self.__best_objective_value = math.inf
+        self.model = None
+        self.dispatcher = dispatcher
+        self.best_assignments = None
+
+    def on_solution_callback(self):
         """
-        Solve the problem specified by this model
+        Called on each solution found by the solver.
         :return: -
         """
-        solver = cp_model.CpSolver()
-        status = solver.Solve(self.model)
-        status_str = 'invalid'
+        obj = self.ObjectiveValue()
+        if obj < self.__best_objective_value:
+            self.__best_objective_value = obj
 
-        if status == cp_model.OPTIMAL:
-            status_str = 'Optimal'
-        elif status == cp_model.FEASIBLE:
-            status_str = 'Feasible'
-        elif status == cp_model.INFEASIBLE:
-            status_str = 'Infeasible'
-        print(f'Status of the solution : {status_str}')
-
-        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            print('Solution found')
+            # Save the current solution
             assignments = {}
-            for (p, s), var in self.shifts_dict.items():
-                if solver.Value(var):
+            for (p, s), var in self.model.shifts_dict.items():
+                if self.Value(var):
                     if s in assignments.keys():
                         assignments[s] = assignments[s] + [p]
                     else:
                         assignments[s] = [p]
 
-            for s, l in assignments.items():
-                print(f'{s} : ')
-                for p in l:
-                    print(f'\t{p}')
-        else:
-            print('No solution found')
+            self.best_assignments = assignments
+
+        self.__solution_count += 1
+
+        # Update label
+        self.dispatcher.post_count(self.__solution_count)
+
+    def solution_count(self):
+        """
+        Returns the number of solutions found so far
+        """
+        return self.__solution_count

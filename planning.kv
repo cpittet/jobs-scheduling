@@ -3,6 +3,7 @@
 <Root>:
     min_nb_shift: min_nb_shift
     max_nb_shift: max_nb_shift
+    max_solver_time: max_solver_time
 
     BoxLayout:
         padding: [25, 25]
@@ -101,7 +102,7 @@
                         text_size: self.size
                         halign: 'left'
                         valign: 'middle'
-                        text: 'Nbr. minimum de shift par personnes :'
+                        text: 'Nbr. minimum de shifts par personnes :'
                     TextInput:
                         id: min_nb_shift
                         size_hint_y: None
@@ -116,7 +117,7 @@
                         text_size: self.size
                         halign: 'left'
                         valign: 'middle'
-                        text: 'Nbr. maximum de shift par personnes :'
+                        text: 'Nbr. maximum de shifts par personnes :'
                     TextInput:
                         id: max_nb_shift
                         size_hint_y: None
@@ -124,29 +125,74 @@
                         valign: 'middle'
                         input_filter: 'int'
 
-        BoxLayout:
-            canvas.before:
-                Line:
-                    rectangle: self.x, self.y, self.width, self.height
-            padding: [10, 10]
-            orientation: 'vertical'
-
-            Button:
-                size_hint_y: None
-                height: 30
-                text: 'Calculer'
-                on_release: root.compute_and_save()
-
+        AnchorLayout:
+            anchor_y: 'bottom'
+            size_hint_y: None
+            height: 300
             BoxLayout:
-                size_hint_y: None
-                height: 30
-                Label:
-                    text: 'Temps de calcul [s] :'
-                    halign: 'left'
-                Label:
-                    halign: 'left'
-                    valign: 'middle'
-                    text: root.time_solver
+                canvas.before:
+                    Line:
+                        rectangle: self.x, self.y, self.width, self.height
+                padding: [10, 10]
+                orientation: 'vertical'
+                spacing: 50
+
+                BoxLayout:
+                    size_hint_y: None
+                    height: 30
+                    Label:
+                        text: 'Nombre de solutions trouvée(s) :'
+                        halign: 'left'
+                    Label:
+                        halign: 'left'
+                        valign: 'middle'
+                        text: root.nb_solutions
+
+                BoxLayout:
+                    size_hint_y: None
+                    height: 30
+                    Label:
+                        text: 'Statut de la solution : '
+                        text_size: self.size
+                        halign: 'left'
+                    Label:
+                        halign: 'left'
+                        valign: 'middle'
+                        text: root.sol_status
+
+                BoxLayout:
+                    orientation: 'vertical'
+                    spacing: 30
+
+                    BoxLayout:
+                        orientation: 'vertical'
+                        spacing: 15
+                        Label:
+                            text_size: self.size
+                            halign: 'left'
+                            valign: 'middle'
+                            text: 'Temps maximum de calculs [min] : '
+                        TextInput:
+                            id: max_solver_time
+                            size_hint_y: None
+                            height: 30
+                            valign: 'middle'
+                            input_filter: 'int'
+                            text: '15'
+
+                    BoxLayout:
+
+                        Button:
+                            size_hint_y: None
+                            height: 30
+                            text: 'Calculer'
+                            on_release: root.compute_and_save()
+
+                        Button:
+                            size_hint_y: None
+                            height: 30
+                            text: 'Stopper'
+                            on_release: root.stop_computations()
 
 <LoadDialog>:
     BoxLayout:

@@ -1,14 +1,22 @@
+import asyncio
 import os
+import threading
 
 from kivy.app import App
+from kivy.clock import mainthread, Clock
 from kivy.core.window import Window
+from kivy.event import EventDispatcher
 from kivy.properties import ObjectProperty, StringProperty, ListProperty
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.popup import Popup
+from ortools.sat.python import cp_model
 
 import utils.utils
-from model.model import Model
-from utils.utils import load_persons, load_availabilities, generate_availability_matrix, save_schedule, load_shifts
+from model.model import create_and_solve, SolutionSaverCallback
+from utils.utils import load_persons, load_availabilities, generate_availability_matrix, load_shifts, save_schedule
+
+
+IMPOSSIBLE = 1
 
 
 class LoadDialog(FloatLayout):
@@ -28,6 +36,71 @@ class MessageDialog(FloatLayout):
     text = StringProperty('')
 
 
+class LoopWorker(EventDispatcher):
+    # Event for this dispatcher
+    __events__ = ('on_new_solution',)
+
+    def __init__(self):
+        super().__init__()
+
+        self._thread = threading.Thread(target=self.run_loop)  # note the Thread target here
+        self._thread.daemon = True
+        self.loop = None
+        self.task = None
+        self.futur = None
+
+    def start(self, min_nb_shift, max_nb_shift, persons, shifts, availability_matrix, save_file, max_solver_time):
+        self.min_nb_shift = min_nb_shift
+        self.max_nb_shift = max_nb_shift
+        self.persons = persons
+        self.shifts = shifts
+        self.availability_matrix = availability_matrix
+        self.save_file = save_file
+        self.max_solver_time = max_solver_time
+
+        self._thread.start()
+
+    def run_loop(self):
+        self.loop = asyncio.get_event_loop_policy().new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        # Kick the actual computations
+        if self.futur is not None:
+            self.futur.cancel()
+        self.futur = self.loop.create_future()
+
+        self.task = self.loop.create_task(self.compute(self.futur))
+        self.loop.run_until_complete(self.futur)
+
+    async def compute(self, futur):
+        self.callback = SolutionSaverCallback(self)
+        status = create_and_solve(self.min_nb_shift,
+                                  self.max_nb_shift,
+                                  self.persons,
+                                  self.shifts,
+                                  self.availability_matrix,
+                                  self.callback,
+                                  self.max_solver_time)
+
+        futur.set_result(status)
+        save_schedule(self.save_file, self.callback.best_assignments)
+
+    @mainthread
+    def post_count(self, nb):
+        self.dispatch('on_new_solution', nb)
+
+    def on_new_solution(self, *_):
+        pass
+
+    def stop(self):
+        self.task.cancel()
+        self._thread.join()
+
+        if self.futur.done() and self.callback.best_assignments is not None:
+            save_schedule(self.save_file, self.callback.best_assignments)
+        return self.futur.result()
+
+
 class Root(FloatLayout):
     load_person_file = ObjectProperty(None)
     load_shift_file = ObjectProperty(None)
@@ -38,13 +111,17 @@ class Root(FloatLayout):
     shifts_file = StringProperty('')
     availabilities_file = StringProperty('')
     save_file = StringProperty('')
-    time_solver = StringProperty('')
+    nb_solutions = StringProperty('0')
+    max_solver_time = ObjectProperty(None)
+    sol_status = StringProperty('')
 
     persons = None
     shifts = None
     ref_time = None
     availabilities = None
     availability_matrix = None
+    computations_task = None
+    loop_worker = None
 
     def close_popup(self):
         self.popup.dismiss()
@@ -218,6 +295,24 @@ class Root(FloatLayout):
 
         self.popup.open()
 
+    def show_no_max_solver_time(self):
+        message = f"Vous devez spécifier un temps maximal de calculs (en minutes) strictement positif !"
+        content = MessageDialog(text=message, ok=self.close_popup)
+        self.popup = Popup(title='Information manquante',
+                           content=content,
+                           size_hint=(0.6, 0.6))
+
+        self.popup.open()
+
+    def show_no_sol_yet(self):
+        message = f"Aucune solution trouvée pour le moment. Essayez d'augmenter le temps de calcul !"
+        content = MessageDialog(text=message, ok=self.close_popup)
+        self.popup = Popup(title='Pas encore de solution trouvée',
+                           content=content,
+                           size_hint=(0.6, 0.6))
+
+        self.popup.open()
+
     def compute_and_save(self):
         if self.persons_file == '':
             self.show_file_not_selected('personnes')
@@ -227,8 +322,12 @@ class Root(FloatLayout):
             self.show_file_not_selected('disponibilités')
         elif self.save_file == '':
             self.show_file_not_selected('résultats')
-        elif int(self.min_nb_shift.text) > int(self.max_nb_shift.text) or int(self.min_nb_shift.text) < 0 or int(self.max_nb_shift.text) < 0:
+        elif self.min_nb_shift.text == '' or self.max_nb_shift.text == '' or \
+                int(self.min_nb_shift.text) > int(self.max_nb_shift.text) or \
+                int(self.min_nb_shift.text) < 0 or int(self.max_nb_shift.text) < 0:
             self.show_nb_shifts_error()
+        elif self.max_solver_time.text == '' or int(self.max_solver_time.text) <= 0:
+            self.show_no_max_solver_time()
         else:
             # Compute the availability matrix
             self.availability_matrix = generate_availability_matrix(self.persons,
@@ -236,25 +335,53 @@ class Root(FloatLayout):
                                                                     self.availabilities,
                                                                     self.ref_time)
 
-            # Instantiate the model
-            model = Model(min_nb_shifts=int(self.min_nb_shift.text), max_nb_shifts=int(self.max_nb_shift.text))
-            model.build_model(self.persons, self.shifts, self.availability_matrix)
+            self.sol_status = ''
 
             # Kick the computations
-            assignments, status_str, wall_time = model.solve()
+            if self.loop_worker is None:
+                self.loop_worker = LoopWorker()
 
-            if status_str == model.status_str_invalid:
-                self.show_invalid_model_error()
-            elif status_str == model.status_str_infeasible:
+                def display_solutions_count(instance, nb):
+                    self.nb_solutions = str(nb)
+
+                self.loop_worker.bind(on_new_solution=display_solutions_count)
+                self.loop_worker.start(int(self.min_nb_shift.text),
+                                       int(self.max_nb_shift.text),
+                                       self.persons,
+                                       self.shifts,
+                                       self.availability_matrix,
+                                       self.save_file,
+                                       int(self.max_solver_time.text))
+
+    def stop_computations(self):
+        if self.loop_worker is not None:
+            result = self.loop_worker.stop()
+            self.loop_worker = None
+
+            if result == cp_model.INFEASIBLE:
                 self.show_infeasible_solution_error()
-            else:
-                # Save the results
-                save_schedule(self.save_file, assignments)
-
-                # Update time solver
-                self.time_solver = f'{wall_time}'
-
+            elif int(self.nb_solutions) > 0:
                 self.show_saved_successfully()
+            else:
+                self.show_no_sol_yet()
+
+    def check_for_status(self, dt):
+        if self.loop_worker is not None:
+            status_futur = self.loop_worker.futur
+
+            if status_futur.done():
+                status = status_futur.result()
+
+                if status == cp_model.OPTIMAL:
+                    status_str = 'Optimal'
+                elif status == cp_model.FEASIBLE:
+                    status_str = 'Faisable'
+                elif status == cp_model.INFEASIBLE:
+                    status_str = 'Impossible'
+                print('setting status')
+                self.sol_status = status_str
+
+                self.stop_computations()
 
 
 class PlanningApp(App):
@@ -262,7 +389,9 @@ class PlanningApp(App):
         Window.size = (1000, 750)
         Window.minimum_width, Window.minimum_height = Window.size
         self.icon = 'icon.jpeg'
-        return Root()
+        root = Root()
+        Clock.schedule_interval(root.check_for_status, 1.0)
+        return root
 
 
 if __name__ == '__main__':

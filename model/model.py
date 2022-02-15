@@ -125,12 +125,12 @@ class Model:
         # Constraint for the number of person for each shift
         for s in shifts:
             # Ensure that shift s has the right number of persons assigned to it
-            self.model.Add(sum(self.shifts_dict[(p, s)] for p in persons) == s.nb_persons)
+            self.model.Add(sum(self.shifts_dict.get((p, s), 0) for p in persons) == s.nb_persons)
 
         # Constraint for the minimum number of person by shift
         for p in persons:
             # Add the minimum and maximum number of shifts constraint for this person
-            nb_shifts = sum(self.shifts_dict[(p, s)] for s in shifts)
+            nb_shifts = sum(self.shifts_dict.get((p, s), 0) for s in shifts)
             self.model.Add(nb_shifts >= self.min_nb_shifts)
             self.model.Add(nb_shifts <= self.max_nb_shifts)
 
@@ -150,7 +150,7 @@ class Model:
         sums_vars = []
         for p in persons:
             tmp = self.model.NewIntVar(0, len(shifts), f'person_{p}_nb_shifts')
-            self.model.Add(tmp == sum(self.shifts_dict[(p, s)] for s in shifts))
+            self.model.Add(tmp == sum(self.shifts_dict.get((p, s), 0) for s in shifts))
 
             sums_vars.append(tmp)
 
@@ -251,7 +251,8 @@ class Model:
                     # Add the break between the 2 shifts
                     # if this person was assigned to these 2 shifts
                     tmp_var = self.model.NewIntVar(0, 1, f'person_{p}_shifts_pair_{s1_}_{s2_}_break_objective')
-                    self.model.AddMultiplicationEquality(tmp_var, [self.shifts_dict[(p, s1_)], self.shifts_dict[(p, s2_)]])
+                    self.model.AddMultiplicationEquality(tmp_var, [self.shifts_dict.get((p, s1_), 1),
+                                                                   self.shifts_dict.get((p, s2_), 1)])
                     var_objective += tmp_var * (s2_.start - s1_.end)
 
         # In negative as want to minimize the final objective
@@ -284,12 +285,14 @@ class Model:
         # Add all variables and constraints for pairs of person-shift
         for i, p in enumerate(persons):
             for j, s in enumerate(shifts):
-                # Create all the variables
-                self.create_variables(s, p)
+                if availability[i, j] and (s.is_major_only <= p.is_major()):
+                    # Create all the variables, only if this person
+                    # is available for this shift and has the required age
+                    self.create_variables(s, p)
 
-                # Create all the hard constraints for each pair
-                # of shift and person
-                self.create_constraints(s, p, availability[i, j])
+                    # Create all the hard constraints for each pair
+                    # of shift and person
+                    self.create_constraints(s, p, availability[i, j])
 
         # Add general hard constraints
         self.create_general_constraints(shifts, persons)
